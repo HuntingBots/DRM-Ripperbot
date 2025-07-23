@@ -6,7 +6,7 @@ echo "1. Edit your bot config file and set your Telegram bot token and other set
 echo "   nano ~/DRM-Ripperbot/config.py"
 echo ""
 echo "2. Start your bot:"
-echo "   cd ~/DRM-Ripperbot && python3 bot.py && git token - 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 && Username - HuntingBots"
+echo "   cd ~/DRM-Ripperbot && python3 bot.py && git token - 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 && Username - HuntingBots"
 echo ""
 echo "To verify tools, run: N_m3u8DL-RE --version ; mp4decrypt --version ; gdrive version ; ffmpeg -version"
 echo ""
