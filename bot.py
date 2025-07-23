@@ -15,9 +15,9 @@ from telegram.ext import (
 import config
 from access_control import is_authorized
 
-TELEGRAM_BOT_TOKEN = config.TOKEN
-DOWNLOAD_DIR = os.path.abspath(config.DOWNLOAD_LOCATION)
-MAX_TG_SIZE = config.TG_MAX_FILE_SIZE
+TELEGRAM_BOT_TOKEN = config.Config.BOT_TOKEN
+DOWNLOAD_DIR = os.path.abspath(config.Config.DOWNLOAD_LOCATION)
+MAX_TG_SIZE = config.Config.get_max_tg_upload_size()  # For userbot uploads (2GB/4GB)
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
