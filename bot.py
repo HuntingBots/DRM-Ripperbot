@@ -3,14 +3,14 @@ import subprocess
 import shlex
 import threading
 import asyncio
-import time
 import uuid
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
-    CallbackQueryHandler, filters
+    ApplicationBuilder, CommandHandler, ContextTypes,
+    CallbackQueryHandler
 )
+from telegram.error import Forbidden
 
 import config
 from access_control import is_authorized
@@ -156,17 +156,23 @@ async def process_task(context, task: Task):
         size = os.path.getsize(final_file)
         if size < MAX_TG_SIZE:
             with open(final_file, "rb") as f:
-                await context.bot.send_document(
-                    chat_id=task.chat_id,
-                    document=f,
-                    filename=os.path.basename(final_file),
-                    caption=f"Task {task.task_id} completed!"
-                )
+                try:
+                    await context.bot.send_document(
+                        chat_id=task.chat_id,
+                        document=f,
+                        filename=os.path.basename(final_file),
+                        caption=f"Task {task.task_id} completed!"
+                    )
+                except Forbidden:
+                    pass
         else:
-            await context.bot.send_message(
-                chat_id=task.chat_id,
-                text=f"File too large for Telegram. You can download it from your server:\n{final_file}"
-            )
+            try:
+                await context.bot.send_message(
+                    chat_id=task.chat_id,
+                    text=f"File too large for Telegram. You can download it from your server:\n{final_file}"
+                )
+            except Forbidden:
+                pass
     elif task.upload_type == "gdrive":
         task.status = "Uploading to Google Drive"
         gdrive_cmd = f"gdrive upload --share '{final_file}'"
@@ -182,23 +188,29 @@ async def process_task(context, task: Task):
             if "https://drive.google.com" in line:
                 link = line.strip()
                 break
-        if link:
-            await context.bot.send_message(
-                chat_id=task.chat_id,
-                text=f"✅ Uploaded to Google Drive:\n{link}"
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=task.chat_id,
-                text="Failed to upload to Google Drive."
-            )
+        try:
+            if link:
+                await context.bot.send_message(
+                    chat_id=task.chat_id,
+                    text=f"✅ Uploaded to Google Drive:\n{link}"
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=task.chat_id,
+                    text="Failed to upload to Google Drive."
+                )
+        except Forbidden:
+            pass
     task.status = "Done"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     if not is_authorized(user_id, chat_id):
-        await update.message.reply_text("⛔ Not authorized.")
+        try:
+            await update.message.reply_text("⛔ Not authorized.")
+        except Forbidden:
+            pass
         return
     await update.message.reply_text(
         "Send /rip <url> [KID:KEY] [tg|gdrive]\n"
@@ -213,7 +225,10 @@ async def rip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     if not is_authorized(user_id, chat_id):
-        await update.message.reply_text("⛔ Not authorized.")
+        try:
+            await update.message.reply_text("⛔ Not authorized.")
+        except Forbidden:
+            pass
         return
 
     args = context.args
@@ -272,18 +287,27 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_id = data.split("_", 1)[1]
         if task_id in tasks:
             tasks[task_id].cancel()
-            await query.edit_message_text(f"❌ Task {task_id} cancelled.")
+            try:
+                await query.edit_message_text(f"❌ Task {task_id} cancelled.")
+            except Forbidden:
+                pass
     elif data.startswith("save_"):
         task_id = data.split("_", 1)[1]
         if task_id in tasks:
             tasks[task_id].save()
-            await query.edit_message_text(f"💾 Task {task_id} saved.")
+            try:
+                await query.edit_message_text(f"💾 Task {task_id} saved.")
+            except Forbidden:
+                pass
 
 async def tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     if not is_authorized(user_id, chat_id):
-        await update.message.reply_text("⛔ Not authorized.")
+        try:
+            await update.message.reply_text("⛔ Not authorized.")
+        except Forbidden:
+            pass
         return
     msg = ""
     for tid, task in tasks.items():
@@ -292,12 +316,21 @@ async def tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = "No active tasks."
     await update.message.reply_text(msg)
 
+async def error_handler(update, context):
+    try:
+        raise context.error
+    except Forbidden:
+        pass
+    except Exception as e:
+        print(f"Unhandled exception: {e}")
+
 def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("rip", rip))
     app.add_handler(CommandHandler("tasks", tasks_list))
     app.add_handler(CallbackQueryHandler(button))
+    app.add_error_handler(error_handler)
     print("Bot running...")
     app.run_polling()
 
