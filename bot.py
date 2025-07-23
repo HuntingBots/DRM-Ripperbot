@@ -1,58 +1,305 @@
-import logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from configparser import ConfigParser
-from inline_keyboard import send_task_options, handle_callback
+import os
+import subprocess
+import shlex
+import threading
+import asyncio
+import time
+import uuid
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
+    CallbackQueryHandler, filters
+)
+
+import config
 from access_control import is_authorized
 
-config = ConfigParser()
-config.read("config.ini")
+TELEGRAM_BOT_TOKEN = config.TOKEN
+DOWNLOAD_DIR = os.path.abspath(config.DOWNLOAD_LOCATION)
+MAX_TG_SIZE = config.TG_MAX_FILE_SIZE
 
-TOKEN = config.get("TELEGRAM", "Token")
-OWNER_ID = int(config.get("TELEGRAM", "OwnerID"))
-AUTHORIZED_GROUP = int(config.get("TELEGRAM", "AuthorizedGroupID"))
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-logging.basicConfig(level=logging.INFO)
+# ========== TASK MANAGEMENT ==========
+tasks = {}  # task_id: Task
+
+class Task:
+    def __init__(self, user_id, url, key_kid, upload_type, chat_id, message_id):
+        self.task_id = str(uuid.uuid4())[:8]
+        self.user_id = user_id
+        self.url = url
+        self.key_kid = key_kid
+        self.upload_type = upload_type  # 'tg' or 'gdrive'
+        self.chat_id = chat_id
+        self.message_id = message_id
+        self.status = "Queued"
+        self.cancelled = False
+        self.progress = 0
+        self.filename = None
+        self.thread = None
+
+    def cancel(self):
+        self.cancelled = True
+        self.status = "Cancelled"
+
+    def save(self):
+        with open(f"{DOWNLOAD_DIR}/{self.task_id}.task", "w") as f:
+            f.write(f"{self.url}\n{self.key_kid or ''}\n{self.upload_type}\n{self.status}\n")
+
+    @staticmethod
+    def load(task_id):
+        try:
+            with open(f"{DOWNLOAD_DIR}/{task_id}.task", "r") as f:
+                url, key_kid, upload_type, status = f.read().splitlines()
+                return url, key_kid or None, upload_type, status
+        except Exception:
+            return None
+
+# ========== UTILS ==========
+def detect_extension(url: str) -> str:
+    if ".m3u8" in url:
+        return "m3u8"
+    if ".mpd" in url:
+        return "mpd"
+    if ".ts" in url:
+        return "ts"
+    return "mp4"
+
+def run_cmd_status(command, task: Task, shell=False):
+    process = subprocess.Popen(
+        command if shell else shlex.split(command),
+        shell=shell,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+    output_lines = []
+    while True:
+        if task.cancelled:
+            process.terminate()
+            return output_lines, "Cancelled"
+        line = process.stdout.readline()
+        if not line:
+            break
+        output_lines.append(line)
+        if "Segment" in line or "%" in line:
+            try:
+                pct = int(''.join(filter(str.isdigit, line)))
+                task.progress = pct
+            except:
+                pass
+    process.wait()
+    return output_lines, process.returncode
+
+async def send_status_bar(context, task: Task):
+    while task.status not in ["Done", "Cancelled", "Error"]:
+        bar = f"[{'=' * (task.progress // 10)}{' ' * (10 - (task.progress // 10))}] {task.progress}%\nStatus: {task.status}"
+        keyboard = [
+            [InlineKeyboardButton("Cancel", callback_data=f"cancel_{task.task_id}"),
+             InlineKeyboardButton("Save Task", callback_data=f"save_{task.task_id}")]
+        ]
+        try:
+            await context.bot.edit_message_text(
+                chat_id=task.chat_id,
+                message_id=task.message_id,
+                text=f"🔄 Ripping Task {task.task_id}\nURL: {task.url}\n" + bar,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception:
+            pass
+        await asyncio.sleep(2)
+
+async def process_task(context, task: Task):
+    ext = detect_extension(task.url)
+    base = os.path.join(DOWNLOAD_DIR, f"{task.user_id}_{task.task_id}")
+    raw_file = f"{base}.{ext}"
+    decrypted_file = f"{base}_decrypted.mp4"
+    final_file = f"{base}_final.mp4"
+    task.status = "Downloading"
+    if ext == "mpd":
+        dl_cmd = f"N_m3u8DL-RE '{task.url}' -M format=mp4 -o '{raw_file}'"
+    else:
+        dl_cmd = f"N_m3u8DL-RE '{task.url}' -o '{raw_file}'"
+
+    _, code = run_cmd_status(dl_cmd, task, shell=True)
+    if code != 0 or not os.path.exists(raw_file):
+        task.status = "Error"
+        return
+
+    src_file = raw_file
+    if task.key_kid:
+        kid, key = task.key_kid.split(':')
+        task.status = "Decrypting"
+        dec_cmd = f"mp4decrypt --key {kid}:{key} '{raw_file}' '{decrypted_file}'"
+        _, code = run_cmd_status(dec_cmd, task, shell=True)
+        if code != 0 or not os.path.exists(decrypted_file):
+            task.status = "Error"
+            return
+        src_file = decrypted_file
+
+    if not src_file.endswith(".mp4"):
+        task.status = "Remuxing"
+        ffmpeg_cmd = f"ffmpeg -y -i '{src_file}' -c copy '{final_file}'"
+        _, code = run_cmd_status(ffmpeg_cmd, task, shell=True)
+        if code != 0 or not os.path.exists(final_file):
+            task.status = "Error"
+            return
+    else:
+        final_file = src_file
+
+    task.filename = final_file
+    task.status = "Uploading"
+
+    if task.upload_type == "tg":
+        size = os.path.getsize(final_file)
+        if size < MAX_TG_SIZE:
+            with open(final_file, "rb") as f:
+                await context.bot.send_document(
+                    chat_id=task.chat_id,
+                    document=f,
+                    filename=os.path.basename(final_file),
+                    caption=f"Task {task.task_id} completed!"
+                )
+        else:
+            await context.bot.send_message(
+                chat_id=task.chat_id,
+                text=f"File too large for Telegram. You can download it from your server:\n{final_file}"
+            )
+    elif task.upload_type == "gdrive":
+        task.status = "Uploading to Google Drive"
+        gdrive_cmd = f"gdrive upload --share '{final_file}'"
+        process = subprocess.Popen(
+            shlex.split(gdrive_cmd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        out, err = process.communicate()
+        link = ""
+        for line in out.splitlines():
+            if "https://drive.google.com" in line:
+                link = line.strip()
+                break
+        if link:
+            await context.bot.send_message(
+                chat_id=task.chat_id,
+                text=f"✅ Uploaded to Google Drive:\n{link}"
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=task.chat_id,
+                text="Failed to upload to Google Drive."
+            )
+    task.status = "Done"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
-
-    if chat_id < 0 and chat_id != AUTHORIZED_GROUP:
-        return
-
     if not is_authorized(user_id, chat_id):
-        await update.message.reply_text("You are not authorized to use this bot.")
+        await update.message.reply_text("⛔ Not authorized.")
         return
-
-    await update.message.reply_text("👋 Welcome to TGHRip!\nSend /rip <url> <key> to start ripping.")
+    await update.message.reply_text(
+        "Send /rip <url> [KID:KEY] [tg|gdrive]\n"
+        "Examples:\n"
+        "  /rip https://site/playlist.m3u8\n"
+        "  /rip https://site/manifest.mpd 87d...:dc4... gdrive\n"
+        "Supports m3u8, ts, mpd/dash (with or without DRM), uploads to Telegram or Google Drive.\n"
+        "You can cancel or save a task during processing."
+    )
 
 async def rip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
-
-    if chat_id < 0 and chat_id != AUTHORIZED_GROUP:
-        return
-
     if not is_authorized(user_id, chat_id):
         await update.message.reply_text("⛔ Not authorized.")
         return
 
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /rip <url> <decryption_key>")
+    args = context.args
+    if not args:
+        await update.message.reply_text("Usage: /rip <stream_url> [KID:KEY] [tg|gdrive]")
         return
+    url = args[0]
+    key_kid = None
+    upload_type = "tg"
+    if len(args) > 1 and ':' in args[1]:
+        key_kid = args[1]
+        if len(args) > 2:
+            upload_type = args[2].lower()
+    elif len(args) > 1:
+        upload_type = args[1].lower()
+    if upload_type not in ["tg", "gdrive"]:
+        upload_type = "tg"
 
-    url, key = context.args[0], context.args[1]
-    context.user_data['url'] = url
-    context.user_data['key'] = key
+    msg = await update.message.reply_text(
+        "Ripping started...",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Cancel", callback_data="cancel_pending"),
+             InlineKeyboardButton("Save Task", callback_data="save_pending")]
+        ])
+    )
+    task = Task(
+        user_id=user_id,
+        url=url,
+        key_kid=key_kid,
+        upload_type=upload_type,
+        chat_id=chat_id,
+        message_id=msg.message_id
+    )
+    tasks[task.task_id] = task
 
-    await send_task_options(update, context)
+    loop = asyncio.get_event_loop()
+    task.thread = threading.Thread(target=lambda: asyncio.run_coroutine_threadsafe(
+        process_task(context, task), loop).result()
+    )
+    task.thread.start()
+    asyncio.create_task(send_status_bar(context, task))
+    await context.bot.edit_message_reply_markup(
+        chat_id=task.chat_id,
+        message_id=task.message_id,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Cancel", callback_data=f"cancel_{task.task_id}"),
+             InlineKeyboardButton("Save Task", callback_data=f"save_{task.task_id}")]
+        ])
+    )
 
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data.startswith("cancel_"):
+        task_id = data.split("_", 1)[1]
+        if task_id in tasks:
+            tasks[task_id].cancel()
+            await query.edit_message_text(f"❌ Task {task_id} cancelled.")
+    elif data.startswith("save_"):
+        task_id = data.split("_", 1)[1]
+        if task_id in tasks:
+            tasks[task_id].save()
+            await query.edit_message_text(f"💾 Task {task_id} saved.")
 
+async def tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    if not is_authorized(user_id, chat_id):
+        await update.message.reply_text("⛔ Not authorized.")
+        return
+    msg = ""
+    for tid, task in tasks.items():
+        msg += f"{tid}: {task.url} | Status: {task.status}\n"
+    if not msg:
+        msg = "No active tasks."
+    await update.message.reply_text(msg)
+
+def main():
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("rip", rip))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-
+    app.add_handler(CommandHandler("tasks", tasks_list))
+    app.add_handler(CallbackQueryHandler(button))
+    print("Bot running...")
     app.run_polling()
+
+if __name__ == "__main__":
+    main()
