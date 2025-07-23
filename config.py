@@ -3,12 +3,12 @@ import os
 class Config(object):
     # Bot configuration
     BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-    API_ID = int(os.environ.get("API_ID", 123456))
-    API_HASH = os.environ.get("API_HASH", "YOUR_API_HASH_HERE")
+    API_ID = int(os.environ.get("API_ID", 3975570))
+    API_HASH = os.environ.get("API_HASH", "680b62f2844aa1954216f6cb99d2f3d9")
     SESSION_NAME = os.environ.get("SESSION_NAME", "AQA7eRMAW_96_U1qa-YSfOdhgRx5hZVeTwuAHxICB7wDK_UNM315-tNnijR7ziedbM76uWTvXn_-pEszyU2vaF9zQOGf1odhUq4deOlTdt4nk2Yleya3gMO6usFfDcug6a_LK2vHc_vpRHfxrG97htNqSd-A12XVBxqCIjQXBA279fciB99kVwhNDzbP9MZyDAxvIPMaejPJZZdT0aCJ96D_OkO5L2ZbATZe7dksGkel1G3GdVCVumrDtCFODSoGOBqSjYQjLUl3_RLkiNOAojSZwQIzZ-jMDFvfMzqAfPyfnbdUIFMCDDn58bJJbTx7tdq84V_q19Jb3GtGyhRCV31h-CocYQAAAABNeVDBAA")
-    LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "-1001234567890"))
-    OWNER_ID = int(os.environ.get("OWNER_ID", 123456789))
-    BOT_USERNAME = os.environ.get("BOT_USERNAME", "@yourbotusername")
+    LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "-1002773421244"))
+    OWNER_ID = int(os.environ.get("OWNER_ID", 1606221784))
+    BOT_USERNAME = os.environ.get("BOT_USERNAME", "@urltofile00bo)
 
     # Only allow commands from these group(s)
     # Comma separated list of group IDs (use negative numbers for supergroups/channels)
@@ -55,7 +55,7 @@ class Config(object):
     CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 128))
     DEF_THUMB_NAIL_VID_S = os.environ.get("DEF_THUMB_NAIL_VID_S", "")
     HTTP_PROXY = os.environ.get("HTTP_PROXY", "")
-    DEF_WATER_MARK_FILE = os.environ.get("DEF_WATER_MARK_FILE", "@yourbotusername")
+    DEF_WATER_MARK_FILE = os.environ.get("DEF_WATER_MARK_FILE", "@urltofile00bon")
     MAX_MESSAGE_LENGTH = 4096
     PROCESS_MAX_TIMEOUT = int(os.environ.get("PROCESS_MAX_TIMEOUT", 3600))
 
