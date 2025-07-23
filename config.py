@@ -8,8 +8,8 @@ class Config(object):
     SESSION_NAME = os.environ.get("SESSION_NAME", "AQA7eRMAW_96_U1qa-YSfOdhgRx5hZVeTwuAHxICB7wDK_UNM315-tNnijR7ziedbM76uWTvXn_-pEszyU2vaF9zQOGf1odhUq4deOlTdt4nk2Yleya3gMO6usFfDcug6a_LK2vHc_vpRHfxrG97htNqSd-A12XVBxqCIjQXBA279fciB99kVwhNDzbP9MZyDAxvIPMaejPJZZdT0aCJ96D_OkO5L2ZbATZe7dksGkel1G3GdVCVumrDtCFODSoGOBqSjYQjLUl3_RLkiNOAojSZwQIzZ-jMDFvfMzqAfPyfnbdUIFMCDDn58bJJbTx7tdq84V_q19Jb3GtGyhRCV31h-CocYQAAAABNeVDBAA")
     LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "-1002773421244"))
     OWNER_ID = int(os.environ.get("OWNER_ID", 1606221784))
-    BOT_USERNAME = os.environ.get("BOT_USERNAME", "@urltofile00bo)
-
+    BOT_USERNAME = os.environ.get("BOT_USERNAME", "@urltofile00bot")
+    
     # Only allow commands from these group(s)
     # Comma separated list of group IDs (use negative numbers for supergroups/channels)
     AUTHORIZED_GROUPS = [
