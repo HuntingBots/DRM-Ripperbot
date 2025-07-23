@@ -2,14 +2,11 @@ import os
 import mimetypes
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from configparser import ConfigParser
-
-config = ConfigParser()
-config.read("config.ini")
+import config
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
-SERVICE_ACCOUNT_FILE = config.get("GOOGLE", "Credentials")
-FOLDER_ID = config.get("GOOGLE", "FolderID")
+SERVICE_ACCOUNT_FILE = config.GOOGLE_CREDENTIALS
+FOLDER_ID = config.GOOGLE_FOLDER_ID
 
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=creds)
@@ -24,7 +21,6 @@ def upload_file(file_path: str, filename: str = None) -> str:
     }
 
     mime_type, _ = mimetypes.guess_type(file_path)
-    media = None
 
     from googleapiclient.http import MediaFileUpload
     media = MediaFileUpload(file_path, mimetype=mime_type, resumable=True)
