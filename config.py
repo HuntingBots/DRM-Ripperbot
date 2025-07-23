@@ -2,7 +2,7 @@ import os
 
 class Config(object):
     # Bot configuration
-    BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+    BOT_TOKEN = os.environ.get("BOT_TOKEN", "1719450568:AAFs2Rtl1vroH0IBL91QFQuuBc5DYiX-M48")
     API_ID = int(os.environ.get("API_ID", 3975570))
     API_HASH = os.environ.get("API_HASH", "680b62f2844aa1954216f6cb99d2f3d9")
     SESSION_NAME = os.environ.get("SESSION_NAME", "AQA7eRMAW_96_U1qa-YSfOdhgRx5hZVeTwuAHxICB7wDK_UNM315-tNnijR7ziedbM76uWTvXn_-pEszyU2vaF9zQOGf1odhUq4deOlTdt4nk2Yleya3gMO6usFfDcug6a_LK2vHc_vpRHfxrG97htNqSd-A12XVBxqCIjQXBA279fciB99kVwhNDzbP9MZyDAxvIPMaejPJZZdT0aCJ96D_OkO5L2ZbATZe7dksGkel1G3GdVCVumrDtCFODSoGOBqSjYQjLUl3_RLkiNOAojSZwQIzZ-jMDFvfMzqAfPyfnbdUIFMCDDn58bJJbTx7tdq84V_q19Jb3GtGyhRCV31h-CocYQAAAABNeVDBAA")
