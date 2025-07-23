@@ -1,12 +1,9 @@
 import asyncio
 from pyrogram import Client
-from configparser import ConfigParser
+import config
 
-config = ConfigParser()
-config.read("config.ini")
-
-API_ID = config.getint("API", "ApiID")
-API_HASH = config.get("API", "ApiHash")
+API_ID = config.API_ID
+API_HASH = config.API_HASH
 
 app = Client("tghrip_userbot", api_id=API_ID, api_hash=API_HASH)
 
