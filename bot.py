@@ -155,24 +155,67 @@ async def process_task(context, task: Task):
     if task.upload_type == "tg":
         size = os.path.getsize(final_file)
         if size < MAX_TG_SIZE:
-            with open(final_file, "rb") as f:
-                try:
+            try:
+                await context.bot.send_message(
+                    chat_id=task.chat_id,
+                    text=f"Download complete. Uploading to Telegram..."
+                )
+                with open(final_file, "rb") as f:
                     await context.bot.send_document(
                         chat_id=task.chat_id,
                         document=f,
                         filename=os.path.basename(final_file),
                         caption=f"Task {task.task_id} completed!"
                     )
-                except Forbidden:
-                    pass
-        else:
-            try:
-                await context.bot.send_message(
-                    chat_id=task.chat_id,
-                    text=f"File too large for Telegram. You can download it from your server:\n{final_file}"
-                )
             except Forbidden:
                 pass
+            except Exception as e:
+                task.status = "Error"
+                await context.bot.send_message(
+                    chat_id=task.chat_id,
+                    text=f"❌ Failed to upload to Telegram: {e}"
+                )
+        else:
+            # Split the file into parts and upload each
+            task.status = "Splitting large file for Telegram upload"
+            part_prefix = os.path.join(DOWNLOAD_DIR, f"{os.path.basename(final_file)}.part_")
+            split_size = MAX_TG_SIZE  # In bytes
+
+            # Use split command (Linux/macOS)
+            split_cmd = f"split -b {split_size} '{final_file}' '{part_prefix}'"
+            subprocess.run(split_cmd, shell=True, check=True)
+
+            # List all parts
+            part_files = sorted([os.path.join(DOWNLOAD_DIR, f) for f in os.listdir(DOWNLOAD_DIR) if f.startswith(os.path.basename(final_file) + ".part_")])
+
+            await context.bot.send_message(
+                chat_id=task.chat_id,
+                text=f"📦 File is larger than Telegram's limit. Uploading in {len(part_files)} parts. After download, join parts with:\n\ncat {os.path.basename(final_file)}.part_* > {os.path.basename(final_file)}"
+            )
+
+            for i, part in enumerate(part_files, start=1):
+                with open(part, "rb") as f:
+                    try:
+                        await context.bot.send_document(
+                            chat_id=task.chat_id,
+                            document=f,
+                            filename=os.path.basename(part),
+                            caption=f"Part {i} of {len(part_files)} for task {task.task_id}"
+                        )
+                    except Forbidden:
+                        pass
+                    except Exception as e:
+                        await context.bot.send_message(
+                            chat_id=task.chat_id,
+                            text=f"❌ Failed to upload part {i}: {e}"
+                        )
+
+            # Optional: clean up part files after upload
+            for part in part_files:
+                try:
+                    os.remove(part)
+                except Exception:
+                    pass
     elif task.upload_type == "gdrive":
         task.status = "Uploading to Google Drive"
         gdrive_cmd = f"gdrive upload --share '{final_file}'"
