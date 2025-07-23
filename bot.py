@@ -10,7 +10,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes,
     CallbackQueryHandler
 )
-from telegram.error import Forbidden
+from telegram.error import Forbidden, BadRequest
 
 import config
 from access_control import is_authorized
@@ -107,6 +107,10 @@ async def send_status_bar(context, task: Task):
                 text=f"🔄 Ripping Task {task.task_id}\nURL: {task.url}\n" + bar,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+        except BadRequest as e:
+            if "query is too old" in str(e).lower() or "message to edit not found" in str(e).lower():
+                break
+            pass
         except Exception:
             pass
         await asyncio.sleep(2)
@@ -181,11 +185,9 @@ async def process_task(context, task: Task):
             part_prefix = os.path.join(DOWNLOAD_DIR, f"{os.path.basename(final_file)}.part_")
             split_size = MAX_TG_SIZE  # In bytes
 
-            # Use split command (Linux/macOS)
             split_cmd = f"split -b {split_size} '{final_file}' '{part_prefix}'"
             subprocess.run(split_cmd, shell=True, check=True)
 
-            # List all parts
             part_files = sorted([os.path.join(DOWNLOAD_DIR, f) for f in os.listdir(DOWNLOAD_DIR) if f.startswith(os.path.basename(final_file) + ".part_")])
 
             await context.bot.send_message(
@@ -209,7 +211,6 @@ async def process_task(context, task: Task):
                             chat_id=task.chat_id,
                             text=f"❌ Failed to upload part {i}: {e}"
                         )
-
             # Optional: clean up part files after upload
             for part in part_files:
                 try:
@@ -324,7 +325,11 @@ async def rip(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except BadRequest:
+        # If the query is too old, just ignore
+        return
     data = query.data
     if data.startswith("cancel_"):
         task_id = data.split("_", 1)[1]
@@ -334,6 +339,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(f"❌ Task {task_id} cancelled.")
             except Forbidden:
                 pass
+            except BadRequest:
+                pass
     elif data.startswith("save_"):
         task_id = data.split("_", 1)[1]
         if task_id in tasks:
@@ -341,6 +348,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_text(f"💾 Task {task_id} saved.")
             except Forbidden:
+                pass
+            except BadRequest:
                 pass
 
 async def tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -364,6 +373,11 @@ async def error_handler(update, context):
         raise context.error
     except Forbidden:
         pass
+    except BadRequest as e:
+        if "query is too old" in str(e).lower():
+            pass
+        else:
+            print(f"Unhandled BadRequest: {e}")
     except Exception as e:
         print(f"Unhandled exception: {e}")
 
