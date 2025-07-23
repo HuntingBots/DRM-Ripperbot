@@ -31,8 +31,23 @@ class Config(object):
 
     # Other configurations
     DOWNLOAD_LOCATION = "./DOWNLOADS"
-    MAX_FILE_SIZE = int(os.environ.get("MAX_FILE_SIZE", 2097152000))
-    TG_MAX_FILE_SIZE = int(os.environ.get("TG_MAX_FILE_SIZE", 2097152000))
+    # Hard limit for any file handled by the bot
+    MAX_FILE_SIZE = int(os.environ.get("MAX_FILE_SIZE", 4 * 1024 * 1024 * 1024))  # 4GB
+    # For Telegram uploads:
+    # 2GB for regular, 4GB for premium
+    TG_USER_MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024       # 2GB (non-premium)
+    TG_PREMIUM_MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024    # 4GB (premium)
+    # Use this to control which account is premium for uploads
+    IS_TG_PREMIUM = os.environ.get("IS_TG_PREMIUM", "false").lower() == "true"
+
+    # Use correct Telegram upload limit for userbot uploads
+    @classmethod
+    def get_max_tg_upload_size(cls):
+        return cls.TG_PREMIUM_MAX_FILE_SIZE if cls.IS_TG_PREMIUM else cls.TG_USER_MAX_FILE_SIZE
+
+    # For Bot API (not userbot, i.e. not pyrogram), the max is 50MB (Telegram restriction)
+    TG_BOT_API_MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
     SESSION_STR = os.environ.get("SESSION_STR", "")
     DATABASE_URL = os.environ.get("DATABASE_URL", "")
     FREE_USER_MAX_FILE_SIZE = int(os.environ.get("FREE_USER_MAX_FILE_SIZE", 2097152000))
