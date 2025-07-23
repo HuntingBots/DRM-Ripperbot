@@ -3,7 +3,7 @@ google-api-python-client==2.126.0
 google-auth==2.29.0
 google-auth-oauthlib==1.2.0
 google-auth-httplib2==0.2.0
-streamlink-drm @ git+https://github.com/ImAleeexx/streamlink-drm.git
 ffmpeg-python==0.2.0
 pyrogram==2.0.106
 tgcrypto==1.2.5
+requests>=2.31.0
