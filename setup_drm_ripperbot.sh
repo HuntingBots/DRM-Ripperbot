@@ -1,55 +1,124 @@
 #!/bin/bash
+# setup_drm_ripperbot.sh - Enhanced for key support
 
 set -e
 
-echo "========= 1. Update packages and install system dependencies ========="
-sudo apt update && sudo apt install -y python3 python3-pip ffmpeg aria2 wget curl git unzip
+echo "🚀 Setting up DRM-RipperBot with MPD Key Support..."
+echo "=================================================="
 
-echo "========= 2. Clone or update DRM-Ripperbot ========="
-if [ ! -d "$HOME/DRM-Ripperbot" ]; then
-    git clone https://github.com/HuntingBots4/DRM-Ripperbot.git ~/DRM-Ripperbot
+# Update system
+echo "🔄 Updating system packages..."
+sudo apt-get update
+sudo apt-get upgrade -y
+
+# Install Python dependencies
+echo "🐍 Installing Python and pip..."
+sudo apt-get install -y python3 python3-pip python3-venv
+
+# Create virtual environment
+echo "📁 Creating virtual environment..."
+python3 -m venv venv
+source venv/bin/activate
+
+# Install Python packages
+echo "📦 Installing Python packages..."
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Install yt-dlp-mp4decrypt plugin
+echo "🔌 Installing yt-dlp-mp4decrypt plugin..."
+pip install -U https://github.com/aarubui/yt-dlp-mp4decrypt/archive/master.zip
+
+# Install additional packages for key support
+echo "🔑 Installing key support packages..."
+pip install cryptography pycryptodome
+
+# Install Bento4 (mp4decrypt)
+echo "🔐 Installing Bento4 for mp4decrypt..."
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    echo "📥 Downloading Bento4 for Linux..."
+    wget -q https://www.bento4.com/downloads/Bento4-SDK-1-6-0-641.x86_64-unknown-linux.zip
+    unzip -q Bento4-SDK-*.zip
+    sudo cp Bento4-SDK-*/bin/mp4decrypt /usr/local/bin/
+    sudo cp Bento4-SDK-*/bin/mp4info /usr/local/bin/
+    sudo chmod +x /usr/local/bin/mp4decrypt
+    rm -rf Bento4-SDK-*
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "📥 Installing Bento4 via Homebrew..."
+    brew install bento4
 else
-    cd ~/DRM-Ripperbot && git pull
-fi
-cd ~/DRM-Ripperbot
-
-echo "========= 3. Install Python dependencies ========="
-if [ -f requirements.txt ]; then
-    pip3 install -r requirements.txt
-else
-    pip3 install python-telegram-bot pyrogram tgcrypto
+    echo "⚠️ Unsupported OS. Please install Bento4 manually:"
+    echo "   https://www.bento4.com/downloads/"
 fi
 
-echo "========= 4. Download and install N_m3u8DL-RE (linux-x64) ========="
-cd ~
-wget -O N_m3u8DL-RE-linux-x64.tar.gz https://github.com/nilaoda/N_m3u8DL-RE/releases/latest/download/N_m3u8DL-RE-linux-x64.tar.gz
-tar -xzf N_m3u8DL-RE-linux-x64.tar.gz
-sudo mv N_m3u8DL-RE /usr/local/bin/
-sudo chmod +x /usr/local/bin/N_m3u8DL-RE
-rm N_m3u8DL-RE-linux-x64.tar.gz
+# Install aria2 for faster downloads
+echo "⚡ Installing aria2 for faster downloads..."
+sudo apt-get install -y aria2
 
-echo "========= 5. Download and install mp4decrypt (Bento4, Linux x86_64) ========="
-wget -O mp4decrypt https://github.com/DavidMuhammad/bento4-static-builds/raw/main/linux/mp4decrypt
-sudo mv mp4decrypt /usr/local/bin/
-sudo chmod +x /usr/local/bin/mp4decrypt
+# Install ffmpeg
+echo "🎬 Installing ffmpeg..."
+sudo apt-get install -y ffmpeg
 
-echo "========= 6. Download and install gdrive CLI (Linux x64) ========="
-wget -O gdrive-linux-x64 https://github.com/prasmussen/gdrive/releases/download/2.1.1/gdrive-linux-x64
-sudo mv gdrive-linux-x64 /usr/local/bin/gdrive
-sudo chmod +x /usr/local/bin/gdrive
+# Create directories
+echo "📂 Creating directories..."
+mkdir -p downloads logs cache temp temp_keys
+mkdir -p auth
+
+# Set permissions
+echo "🔒 Setting permissions..."
+chmod +x bot.py
+chmod +x setup_drm_ripperbot.sh
+chmod 700 temp_keys  # Secure directory for keys
+
+# Create example config
+if [ ! -f config.py ]; then
+    echo "⚙️ Creating config.py.example..."
+    cat > config.py.example << 'EOF'
+# Bot Configuration
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+ADMIN_IDS = [123456789]
+
+# DRM Configuration
+WVD_FILE_PATH = "/path/to/your/cdm.wvd"  # Optional for mp4decrypt plugin
+
+# MPD/DASH Key Support
+ALLOW_DIRECT_KEYS = True
+KEY_VALIDATION = True
+AUTO_EXTRACT_KEYS = True
+
+# Quality Presets
+QUALITY_PRESETS = {
+    "best": "bestvideo+bestaudio/best",
+    "1080p": "bestvideo[height<=1080]+bestaudio/best",
+    "720p": "bestvideo[height<=720]+bestaudio/best",
+    "480p": "bestvideo[height<=480]+bestaudio/best",
+}
+
+# Upload Configuration
+ENABLE_GDRIVE = False
+GDRIVE_CREDENTIALS_PATH = "auth/client_secrets.json"
+
+# Security
+REQUIRE_AUTH = True
+MAX_KEYS_PER_REQUEST = 5
+EOF
+    echo "⚠️ Please copy config.py.example to config.py and edit it"
+fi
 
 echo ""
-echo "========= 7. Final instructions ========="
-echo "✅ All tools and bot source are installed!"
+echo "✅ **Setup Complete!**"
 echo ""
-echo "1. Edit your bot config file and set your Telegram bot token and other settings:"
-echo "   nano ~/DRM-Ripperbot/config.py"
+echo "📋 **Key Features Installed:**"
+echo "   • yt-dlp with mp4decrypt plugin"
+echo "   • Bento4 (mp4decrypt binary)"
+echo "   • Direct key support (kid:key format)"
+echo "   • Key extraction from URLs"
 echo ""
-echo "2. Start your bot:"
-echo "   cd ~/DRM-Ripperbot && python3 bot.py"
+echo "🚀 **Start the bot:**"
+echo "   source venv/bin/activate && python bot.py"
 echo ""
-echo "To verify tools, run: N_m3u8DL-RE --version ; mp4decrypt --version ; gdrive version ; ffmpeg -version"
+echo "🔑 **Test Key Format:**"
+echo "   /testkey 87d54d841e2348b2969a66137522aedd:dc4df1cd96827c90fd05829ef8ed0a0f"
 echo ""
-echo "If you want to update the bot: cd ~/DRM-Ripperbot && git pull"
-echo ""
-echo "Enjoy your DRM-Ripperbot Telegram bot!"
+echo "📚 **Example Usage:**"
+echo "   /mpdkey https://example.com/stream.mpd 87d54d841e2348b2969a66137522aedd:dc4df1cd96827c90fd05829ef8ed0a0f 720p"
