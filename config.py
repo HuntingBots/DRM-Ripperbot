@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 # Bot Configuration
-import os
 
 class Config(object):
     # Bot configuration
